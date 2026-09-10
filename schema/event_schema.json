@@ -1,0 +1,132 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://containment-framework.local/schema/event_schema.json",
+  "title": "Capability Event",
+  "description": "The standard unit of input to the Event Collector (#4). Every action, transfer, tool invocation, or permission change in the multi-agent system is reported as one Event. The Event Collector normalises these into edges/nodes on the Dynamic Capability Graph (#6).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "event_id",
+    "timestamp",
+    "trajectory_id",
+    "agent_id",
+    "action",
+    "object",
+    "result"
+  ],
+  "properties": {
+    "event_id": {
+      "type": "string",
+      "description": "Globally unique identifier for this event, e.g. 'evt-000042'."
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 UTC timestamp of when the action occurred."
+    },
+    "trajectory_id": {
+      "type": "string",
+      "description": "Identifies the simulator run this event belongs to (#1, #35). Lets the evaluation harness group events into one benign or attack scenario."
+    },
+
+    "agent_id": {
+      "type": "string",
+      "description": "The agent performing the action, e.g. 'file_agent', 'analysis_agent', 'email_agent'. The subject of the edge."
+    },
+
+    "action": {
+      "type": "string",
+      "enum": [
+        "read",
+        "write",
+        "call",
+        "delegate",
+        "send",
+        "grant_permission",
+        "revoke_permission"
+      ],
+      "description": "The edge type being created/removed on the capability graph. read=agent reads a resource. write=agent modifies a resource. call=agent invokes a tool/API. delegate=agent hands off a task or data to another agent. send=agent transmits data to a destination (agent, tool, or external endpoint). grant_permission/revoke_permission=the agent's permission set changes."
+    },
+
+    "object": {
+      "type": "object",
+      "description": "What the action was performed on: a resource, tool, or permission.",
+      "additionalProperties": false,
+      "required": ["type", "id"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["resource", "tool", "permission"]
+        },
+        "id": {
+          "type": "string",
+          "description": "e.g. 'customer_records.csv', 'email_api', 'perm-temp-external-send'."
+        },
+        "classification": {
+          "type": "string",
+          "enum": ["public", "internal", "confidential", "pii"],
+          "description": "Data sensitivity label at the time of this action (#5, Context Classifier). Required when object.type is 'resource'."
+        }
+      }
+    },
+
+    "destination": {
+      "type": ["object", "null"],
+      "description": "Where the object flows to, if this action moves or exposes it. Null for pure reads with no onward transfer.",
+      "additionalProperties": false,
+      "required": ["type", "id", "is_external"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["agent", "tool", "external"]
+        },
+        "id": {
+          "type": "string",
+          "description": "e.g. 'email_agent', 'attacker@example.com'."
+        },
+        "is_external": {
+          "type": "boolean",
+          "description": "True if this destination is outside the trusted system boundary (#5). Drives 'prohibited sink' policy checks."
+        }
+      }
+    },
+
+    "permission_id": {
+      "type": ["string", "null"],
+      "description": "The permission that authorised this action. Required for the detector/optimiser to know which permission to revoke when computing a minimum cut. Null only for grant_permission events describing a brand-new permission (see permission_id in metadata.granted_permission_id instead)."
+    },
+
+    "goal_id": {
+      "type": ["string", "null"],
+      "description": "The task/goal the agent claims this action serves (#7, goal-aligned label). Used later for goal-mismatch risk scoring; optional in early phases."
+    },
+
+    "result": {
+      "type": "string",
+      "enum": ["success", "denied", "error"],
+      "description": "Outcome of the action. 'denied' means enforcement already blocked it (e.g. this event is itself the record of a blocked attempt)."
+    },
+
+    "ground_truth_label": {
+      "type": ["object", "null"],
+      "description": "Evaluation-only annotation set by the simulator/scenario generator (#35). MUST NOT be read by the Compositional Risk Detector (#9) or Policy Engine (#8) -- it exists solely for computing precision/recall/false-positive metrics (#39) after the fact.",
+      "additionalProperties": false,
+      "properties": {
+        "trajectory_type": {
+          "type": "string",
+          "enum": ["benign", "attack"]
+        },
+        "attack_type": {
+          "type": ["string", "null"],
+          "description": "e.g. 'cross_agent_exfiltration', 'credential_relay', 'tool_chain_privilege_escalation'. Null for benign trajectories."
+        }
+      }
+    },
+
+    "metadata": {
+      "type": "object",
+      "description": "Free-form extra context (e.g. granted_permission_id, tool call arguments). Does not affect schema validation of required fields.",
+      "additionalProperties": true
+    }
+  }
+}

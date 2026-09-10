@@ -1,0 +1,429 @@
+openapi: 3.1.0
+info:
+  title: Minimum-Disruption Security Containment Framework API
+  version: 0.1.0
+  description: >
+    Reusable integration layer (#45). Other multi-agent platforms send events to
+    this API and receive a security decision in return. Backed by the Dynamic
+    Capability Graph (#6), the Compositional Risk Detector (#9), and the
+    Minimum-Disruption Optimiser (#15).
+
+servers:
+  - url: http://localhost:8000
+
+paths:
+  /events:
+    post:
+      summary: Submit an action, transfer, permission change, or tool invocation
+      description: >
+        Commits the event to the Dynamic Capability Graph and synchronously runs
+        the Compositional Risk Detector against the updated graph. If a
+        prohibited path is found, the Enforcement Engine's decision is returned
+        and an Incident is recorded. Accepts a single event or a batch.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: "../schema/event_schema.json"
+                - type: array
+                  items:
+                    $ref: "../schema/event_schema.json"
+      responses:
+        "200":
+          description: Decision(s) for the submitted event(s), in submission order.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/EventDecision"
+        "400":
+          description: Event failed schema validation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /evaluate:
+    post:
+      summary: Evaluate a proposed action or composed path before execution
+      description: >
+        Dry-run only -- does NOT mutate the Dynamic Capability Graph or create
+        an Incident. Runs the same detector logic against a hypothetical
+        addition to the graph. Intended for agents doing a pre-flight check
+        ("would this be allowed?") or for the optimiser to compare candidate
+        containment actions.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: "../schema/event_schema.json"
+                - type: array
+                  items:
+                    $ref: "../schema/event_schema.json"
+      responses:
+        "200":
+          description: Hypothetical decision(s), not persisted.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/EventDecision"
+
+  /graph:
+    get:
+      summary: Retrieve the current dynamic capability graph
+      description: Powers the Live Capability Graph dashboard page (#27).
+      parameters:
+        - name: agent_id
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Optional filter to the subgraph reachable from/to one agent.
+      responses:
+        "200":
+          description: Current graph snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GraphSnapshot"
+
+  /contain:
+    post:
+      summary: Apply or simulate the recommended containment action
+      description: >
+        Executes (or, with simulate=true, previews) a containment action
+        against the Enforcement Engine (#24). Normally invoked automatically
+        by the detector via /events, but exposed directly for manual operator
+        override from the dashboard and for the Baseline comparisons (#36, #37)
+        to force a specific action.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ContainmentRequest"
+      responses:
+        "200":
+          description: Result of the containment action.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContainmentResult"
+
+  /incidents:
+    get:
+      summary: List incident records
+      description: Supports the Overview (#26) and Agent Activity (#31) pages.
+      parameters:
+        - name: severity
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [suspicious, high, critical]
+        - name: trajectory_id
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: since
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: Matching incident records, most recent first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/IncidentRecord"
+
+  /incidents/{incident_id}:
+    get:
+      summary: Retrieve one incident's full explanation and evidence trail
+      description: Powers the Incident Detail page (#28).
+      parameters:
+        - name: incident_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Full incident record including rejected alternatives.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IncidentRecord"
+        "404":
+          description: No incident with that id.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /policies:
+    patch:
+      summary: Update policies, risk weights, or preservation constraints
+      description: Powers the Policy Configuration page (#32, deferred to secondary layer -- for now, edited directly via this endpoint or the underlying JSON file).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PolicyPatch"
+      responses:
+        "200":
+          description: Updated policy document.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Policy"
+
+components:
+  schemas:
+    EventDecision:
+      type: object
+      additionalProperties: false
+      required: [event_id, decision]
+      properties:
+        event_id:
+          type: string
+        decision:
+          type: string
+          enum: [allow, restrict, block_connection, isolate, emergency_stop]
+          description: Matches the containment_action.action vocabulary used in IncidentRecord.
+        incident_id:
+          type: [string, "null"]
+          description: Set when this decision was triggered by a detected violation.
+
+    ContainmentRequest:
+      type: object
+      additionalProperties: false
+      required: [action, source, target]
+      properties:
+        incident_id:
+          type: [string, "null"]
+          description: Incident this containment responds to, if any (null for a manual operator action taken without a prior automated detection).
+        action:
+          type: string
+          enum: [restrict, block_connection, isolate, emergency_stop]
+        source:
+          type: string
+          description: Node id the action originates from, e.g. an agent id.
+        target:
+          type: [string, "null"]
+          description: Node id the action targets, e.g. another agent, tool, or destination. Null for isolate/emergency_stop, which target a single node or the whole system.
+        simulate:
+          type: boolean
+          default: false
+          description: If true, compute and return the effect without applying it (used by Baseline comparisons #38 and dashboard previews).
+
+    ContainmentResult:
+      type: object
+      additionalProperties: false
+      required: [applied, action, disruption_estimate]
+      properties:
+        applied:
+          type: boolean
+          description: False if simulate=true was requested.
+        action:
+          type: string
+          enum: [restrict, block_connection, isolate, emergency_stop]
+        disruption_estimate:
+          $ref: "#/components/schemas/DisruptionEstimate"
+        preserved_workflow:
+          type: array
+          items:
+            type: string
+          description: Agent/task ids that remain operational after this action.
+
+    DisruptionEstimate:
+      type: object
+      additionalProperties: false
+      required: [tasks_interrupted, agents_affected, cost]
+      properties:
+        tasks_interrupted:
+          type: integer
+        agents_affected:
+          type: integer
+        cost:
+          type: number
+          description: Value from the Disruption Cost Model (#14) used to compare candidate cuts.
+
+    IncidentRecord:
+      type: object
+      additionalProperties: false
+      required:
+        - incident_id
+        - severity
+        - violation
+        - dangerous_path
+        - containment_action
+        - attack_prevented
+        - safe_workflow_continues
+      properties:
+        incident_id:
+          type: string
+        severity:
+          type: string
+          enum: [suspicious, high, critical]
+        violation:
+          type: string
+          description: e.g. 'compositional_privilege_escalation'.
+        dangerous_path:
+          type: array
+          items:
+            type: string
+          description: Ordered node ids from protected source to prohibited destination.
+        containment_action:
+          type: object
+          additionalProperties: false
+          required: [action, source, target]
+          properties:
+            action:
+              type: string
+              enum: [restrict, block_connection, isolate, emergency_stop]
+            source:
+              type: string
+            target:
+              type: [string, "null"]
+        attack_prevented:
+          type: boolean
+        safe_workflow_continues:
+          type: boolean
+        explanation:
+          type: object
+          description: Present on GET /incidents/{id}; omitted from list views for brevity.
+          additionalProperties: false
+          properties:
+            protected_source:
+              type: string
+            policy_rule:
+              type: string
+            rejected_alternatives:
+              type: array
+              items:
+                type: object
+                properties:
+                  action:
+                    type: string
+                  cost:
+                    type: number
+                  reason_rejected:
+                    type: string
+            confidence:
+              type: number
+              minimum: 0
+              maximum: 1
+            preserved_workflow:
+              type: array
+              items:
+                type: string
+
+    GraphSnapshot:
+      type: object
+      additionalProperties: false
+      required: [nodes, edges]
+      properties:
+        nodes:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [id, type]
+            properties:
+              id:
+                type: string
+              type:
+                type: string
+                enum: [agent, tool, resource, destination, permission, goal]
+              labels:
+                type: array
+                items:
+                  type: string
+                description: e.g. 'confidential', 'external', 'goal-aligned'.
+        edges:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [source, target, action]
+            properties:
+              source:
+                type: string
+              target:
+                type: string
+              action:
+                type: string
+                enum: [read, write, call, delegate, send]
+              blocked:
+                type: boolean
+                default: false
+              cost:
+                type: number
+                description: Business-impact/disruption cost of removing this edge.
+
+    Policy:
+      type: object
+      additionalProperties: false
+      properties:
+        protected_sources:
+          type: array
+          items:
+            type: string
+        prohibited_sinks:
+          type: array
+          items:
+            type: string
+        risk_weights:
+          type: object
+          additionalProperties:
+            type: number
+        preservation_constraints:
+          type: array
+          items:
+            type: string
+
+    PolicyPatch:
+      type: object
+      description: Partial Policy; only included fields are updated.
+      additionalProperties: false
+      properties:
+        protected_sources:
+          type: array
+          items:
+            type: string
+        prohibited_sinks:
+          type: array
+          items:
+            type: string
+        risk_weights:
+          type: object
+          additionalProperties:
+            type: number
+        preservation_constraints:
+          type: array
+          items:
+            type: string
+
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: string
+        details:
+          type: string

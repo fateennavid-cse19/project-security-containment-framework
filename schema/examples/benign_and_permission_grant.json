@@ -1,0 +1,51 @@
+[
+  {
+    "event_id": "evt-1001",
+    "timestamp": "2026-09-10T10:00:00Z",
+    "trajectory_id": "traj-benign-001",
+    "agent_id": "email_agent",
+    "action": "send",
+    "object": {
+      "type": "resource",
+      "id": "weekly_newsletter.html",
+      "classification": "public"
+    },
+    "destination": {
+      "type": "external",
+      "id": "subscribers@newsletter-list.example.com",
+      "is_external": true
+    },
+    "permission_id": "perm-email-agent-send-external",
+    "goal_id": "goal-send-newsletter",
+    "result": "success",
+    "ground_truth_label": {
+      "trajectory_type": "benign",
+      "attack_type": null
+    },
+    "metadata": {}
+  },
+  {
+    "event_id": "evt-1002",
+    "timestamp": "2026-09-10T10:05:00Z",
+    "trajectory_id": "traj-benign-001",
+    "agent_id": "finance_agent",
+    "action": "grant_permission",
+    "object": {
+      "type": "permission",
+      "id": "perm-finance-agent-temp-invoice-approval"
+    },
+    "destination": null,
+    "permission_id": null,
+    "goal_id": "goal-quarterly-close",
+    "result": "success",
+    "ground_truth_label": {
+      "trajectory_type": "benign",
+      "attack_type": null
+    },
+    "metadata": {
+      "granted_permission_id": "perm-finance-agent-temp-invoice-approval",
+      "expires_at": "2026-09-10T18:00:00Z",
+      "note": "Temporary permission grant (#17) -- graph adds a time-bounded edge; Event Collector should also emit a revoke_permission event when it expires."
+    }
+  }
+]
