@@ -151,10 +151,8 @@ class CapabilityGraph:
         """True if `target` is reachable from `source` using only non-blocked edges."""
         if source not in self._g or target not in self._g:
             return False
-        active = nx.MultiDiGraph(
-            (u, v, k, d) for u, v, k, d in self._g.edges(keys=True, data=True) if not d["data"].blocked
-        )
-        active.add_nodes_from(self._g.nodes)
+
+        active = self._active_graph()
         return nx.has_path(active, source, target)
 
     def snapshot(self) -> dict:
@@ -162,3 +160,59 @@ class CapabilityGraph:
         nodes = [self._g.nodes[n]["data"].to_dict() for n in self._g.nodes]
         edges = [d["data"].to_dict() for _, _, d in self._g.edges(data=True)]
         return {"nodes": nodes, "edges": edges}
+
+    def get_nodes_by_label(self, labels):
+        matching_nodes = []
+
+        for node_id in self._g.nodes:
+            node = self._g.nodes[node_id]["data"]
+
+            if node.labels.intersection(labels):
+                matching_nodes.append(node_id)
+
+        return matching_nodes
+
+    def find_path(self, source: str, target: str):
+        if source not in self._g or target not in self._g:
+            return None
+
+        active = self._active_graph()
+
+        try:
+            return nx.shortest_path(active, source, target)
+        except nx.NetworkXNoPath:
+            return None
+
+    def get_edge(self, source: str, target: str):
+        if not self._g.has_edge(source, target):
+            return None
+
+        for _, edge_data in self._g[source][target].items():
+            edge = edge_data["data"]
+
+            if not edge.blocked:
+                return edge
+
+        return None
+
+    def get_path_edges(self, path):
+        edges = []
+
+        for i in range(len(path) - 1):
+            edge = self.get_edge(path[i], path[i + 1])
+
+            if edge is not None:
+                edges.append(edge)
+
+        return edges
+
+    def _active_graph(self):
+        active = nx.MultiDiGraph(
+            (u, v, k, d)
+            for u, v, k, d in self._g.edges(keys=True, data=True)
+            if not d["data"].blocked
+        )
+
+        active.add_nodes_from(self._g.nodes)
+
+        return active

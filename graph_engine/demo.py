@@ -9,6 +9,8 @@ import json
 from graph_engine.graph import CapabilityGraph
 from graph_engine.models import EdgeAction
 from event_collector.collector import EventCollector
+from policy_engine.engine import PolicyEngine
+from risk_detector.detector import RiskDetector
 
 EVENTS_FILE = "schema/examples/cross_agent_exfiltration.json"
 
@@ -23,6 +25,16 @@ def main() -> None:
     # existing BEFORE any containment decision is made.
     for event in events[:3]:
         collector.collect(event)
+
+    policy_engine = PolicyEngine()
+    detector = RiskDetector(graph, policy_engine)
+
+    print("\nCurrent policy violations:")
+    print(detector.detect())
+
+    print("\nEvaluating proposed evt-0004:")
+    proposed_violations = detector.evaluate_event(events[3])
+    print(proposed_violations)
 
     print("\nCollected event contexts:")
 
@@ -53,8 +65,12 @@ def main() -> None:
         graph.is_reachable("customer_records.csv", "analysis_agent"),
     )
 
-    print("\nGraph snapshot (matches GraphSnapshot schema in api/openapi.yaml):")
-    print(json.dumps(graph.snapshot(), indent=2))
+    # print("\nGraph snapshot (matches GraphSnapshot schema in api/openapi.yaml):")
+    # print(json.dumps(graph.snapshot(), indent=2))
+
+    print("\nRe-evaluating evt-0004 after containment:")
+    post_containment_violations = detector.evaluate_event(events[3])
+    print(post_containment_violations)
 
 
 if __name__ == "__main__":
