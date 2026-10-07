@@ -1,3 +1,4 @@
+from risk_detector.models import Violation
 
 
 class RiskDetector:
@@ -52,9 +53,6 @@ class RiskDetector:
         if destination is None:
             return violations
 
-        if not destination.get("is_external", False):
-            return violations
-
         obj = event.get("object", {})
         source = obj.get("id")
         agent = event.get("agent_id")
@@ -64,24 +62,38 @@ class RiskDetector:
         if path is None:
             return violations
 
-        for policy in self.policy_engine.get_policies():
-            classification = obj.get("classification")
+        source_labels = set()
 
-            if classification in policy.source_labels:
+        if obj.get("classification"):
+            source_labels.add(obj["classification"])
+
+        destination_labels = self._get_destination_labels(destination)
+
+        for policy in self.policy_engine.get_policies():
+
+            source_matches = bool(
+                source_labels.intersection(policy.source_labels)
+            )
+
+            destination_matches = bool(
+                destination_labels.intersection(policy.destination_labels)
+            )
+
+            if source_matches and destination_matches:
                 path_edges = self.graph.get_path_edges(path)
 
-                violations.append({
-                    "policy_id": policy.policy_id,
-                    "source": source,
-                    "destination": destination["id"],
-                    "path": path + [destination["id"]],
-                    "edges": [
+                violation = Violation(
+                    policy_id=policy.policy_id,
+                    source=source,
+                    destination=destination["id"],
+                    path=path + [destination["id"]],
+                    edges=[
                         {
                             "source": edge.source,
                             "target": edge.target,
                             "action": edge.action.value,
                             "permission_id": edge.permission_id,
-                            "cost": edge.cost
+                            "cost": edge.cost,
                         }
                         for edge in path_edges
                     ] + [
@@ -90,9 +102,20 @@ class RiskDetector:
                             "target": destination["id"],
                             "action": event["action"],
                             "permission_id": event.get("permission_id"),
-                            "cost": 1.0
+                            "cost": 1.0,
                         }
-                    ]
-                })
-                
+                    ],
+                )
+
+                violations.append(violation.to_dict())
         return violations
+
+    def _get_destination_labels(self, destination):
+        labels = set()
+
+        if destination.get("is_external", False):
+            labels.add("external")
+
+        return labels
+
+    
