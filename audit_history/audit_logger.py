@@ -34,7 +34,7 @@ def validate_event(event):
 #============================================================
 # Save one event to audit history
 #============================================================
-def log_event(event):
+def log_event(event, context=None):
     validate_event(event)
 
     audit_record = {
@@ -42,44 +42,24 @@ def log_event(event):
         **event,
     }
 
+    if context is not None:
+        audit_record["context"] = context
+
     with open(AUDIT_HISTORY_FILE, "a", encoding="utf-8") as file:
         file.write(json.dumps(audit_record) + "\n")
 
 
 #============================================================
-# Save one security decision to audit history
+# Save one collected event to audit history
 #============================================================
-def log_security_decision(decision):
-    required_fields = [
-        "incident_id",
-        "timestamp",
-        "trajectory_id",
-        "severity",
-        "violation",
-        "dangerous_path",
-        "containment_action",
-        "attack_prevented",
-        "safe_workflow_continues",
-    ]
+def log_collected_event(collected_event):
+    event = collected_event["event"]
+    context = collected_event.get("context", {})
 
-    missing_fields = [
-        field
-        for field in required_fields
-        if field not in decision
-    ]
-
-    if missing_fields:
-        raise ValueError(
-            f"Missing security decision fields: {missing_fields}"
-        )
-
-    audit_record = {
-        "record_type": "security_decision",
-        **decision,
-    }
-
-    with open(AUDIT_HISTORY_FILE, "a", encoding="utf-8") as file:
-        file.write(json.dumps(audit_record) + "\n")
+    log_event(
+        event,
+        context=context
+    )
 
 
 #============================================================
@@ -150,83 +130,26 @@ def display_history(records=None):
         return
 
     print(
-        f'{"Timestamp":<22} '
-        f'{"Type":<18} '
-        f'{"ID":<12} '
-        f'{"Agent":<16} '
-        f'{"Action":<18} '
-        f'{"Result":<12} '
-        f'{"Trajectory":<15}'
+        "Timestamp | ID | Agent | Action | "
+        "Result | Exposure | Trajectory"
     )
 
-    print("-" * 120)
+    print("-" * 110)
 
     for record in records:
-        record_type = record.get("record_type", "-")
-        timestamp = record.get("timestamp", "-")
-        trajectory_id = record.get("trajectory_id", "-")
+        context = record.get("context", {})
 
-        if record_type == "agent_event":
-            record_id = record.get("event_id", "-")
-            agent = record.get("agent_id", "-")
-            action = record.get("action", "-")
-            result = record.get("result", "-")
-
-        elif record_type == "security_decision":
-            record_id = record.get("incident_id", "-")
-            agent = "-"
-
-            containment_action = record.get(
-                "containment_action",
-                {}
-            )
-
-            action = containment_action.get(
-                "action",
-                "-"
-            )
-
-            if record.get("attack_prevented") is True:
-                result = "prevented"
-            else:
-                result = "not_prevented"
-
-        else:
-            record_id = "-"
-            agent = "-"
-            action = "-"
-            result = "-"
-
-        print(
-            f'{timestamp:<22} '
-            f'{record_type:<18} '
-            f'{record_id:<12} '
-            f'{agent:<16} '
-            f'{action:<18} '
-            f'{result:<12} '
-            f'{trajectory_id:<15}'
+        exposure = context.get(
+            "sensitive_exposure",
+            "-"
         )
 
-
-#============================================================
-# Main program
-#============================================================
-def main():
-    events = load_mock_events()
-
-    for event in events:
-        log_event(event)
-
         print(
-            f'Logged: {event["event_id"]} | '
-            f'{event["agent_id"]} | '
-            f'{event["action"]} | '
-            f'{event["result"]}'
+            f'{record.get("timestamp", "-")} | '
+            f'{record.get("event_id", "-")} | '
+            f'{record.get("agent_id", "-")} | '
+            f'{record.get("action", "-")} | '
+            f'{record.get("result", "-")} | '
+            f'{exposure} | '
+            f'{record.get("trajectory_id", "-")}'
         )
-
-
-#============================================================
-# Run the program
-#============================================================
-if __name__ == "__main__":
-    main()
