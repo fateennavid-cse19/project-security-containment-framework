@@ -2,11 +2,13 @@ import json
 
 from jsonschema import validate
 from jsonschema.exceptions import ValidationError
+from context_classifier.classifier import ContextClassifier
 
 class EventCollector:
     def __init__(self, graph):
         self.graph = graph
         self.events = []
+        self.classifier = ContextClassifier()
 
         with open("schema/event_schema.json") as file:
             self.schema = json.load(file)
@@ -21,7 +23,14 @@ class EventCollector:
             print(f"Invalid event: {error.message}")
             return False
 
-        self.events.append(event)
+        context = self.classifier.classify(event)
+        
+        collected_event = {
+            "event": event,
+            "context": context
+        }
+
+        self.events.append(collected_event)
         self.graph.apply_event(event)
 
         return True

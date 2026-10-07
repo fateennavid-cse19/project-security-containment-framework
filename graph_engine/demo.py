@@ -24,6 +24,15 @@ def main() -> None:
     for event in events[:3]:
         collector.collect(event)
 
+    print("\nCollected event contexts:")
+
+    for collected_event in collector.get_events():
+        event = collected_event["event"]
+        context = collected_event["context"]
+
+        print(event["event_id"])
+        print(context)
+
     print("Before containment:")
     print(
         "  customer_records.csv reachable at email_agent? ",
