@@ -8,6 +8,7 @@ import json
 
 from graph_engine.graph import CapabilityGraph
 from graph_engine.models import EdgeAction
+from event_collector.collector import EventCollector
 
 EVENTS_FILE = "schema/examples/cross_agent_exfiltration.json"
 
@@ -15,12 +16,13 @@ EVENTS_FILE = "schema/examples/cross_agent_exfiltration.json"
 def main() -> None:
     events = json.load(open(EVENTS_FILE))
     graph = CapabilityGraph()
+    collector = EventCollector(graph)
 
     # Apply the read + both delegate events (evt-0001..0003), but not the
     # already-denied send (evt-0004) yet -- we want to show the dangerous path
     # existing BEFORE any containment decision is made.
     for event in events[:3]:
-        graph.apply_event(event)
+        collector.collect(event)
 
     print("Before containment:")
     print(
