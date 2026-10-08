@@ -26,29 +26,62 @@ Following the 7-phase plan in `Internal-Security_Framework_7Week_Gantt_Chart.xls
   exfiltration example and shows a single edge block breaking the dangerous
   path while safe upstream work stays reachable.
 
-**Not built yet:** there is no running server. Everything above is validated
-via scripts (schema validation, OpenAPI validation, the graph demo) but
-nothing listens on a port. That starts in Phase 2/3 once the simulator is
-generating real event traffic and the detector/enforcement logic exists to
-sit behind the API.
+**Phase 2 (Week 2) -- Simulator & Event Ingestion Engine: done**
 
-**Next up -- Phase 2 (Week 2):** Multi-Agent Simulator (#1), Event Collector
-(#4), Context Classifier (#5).
+- `simulator/` -- the Multi-Agent Simulator (#1): replays scripted scenarios
+  (one benign workflow, two attacks) as a live stream of schema-valid events.
+  Agents track the permissions and data they hold, so a missing permission
+  produces a `denied` event, and blocking a step upstream makes later steps
+  that depend on it fail with `error`. A `gate` hook sees every proposed event
+  before it executes -- this is where enforcement plugs in.
+- `event_collector/` -- the Event Collector (#4): validates incoming events
+  against the schema, classifies them, and applies them to the graph.
+- `context_classifier/` -- the Context Classifier (#5): labels each event's
+  trust boundary, transfer type, and sensitive-data exposure.
+- `audit_history/` -- Agent Activity Audit History (#31): appends events plus
+  their context to a JSONL log, with filtering and a simple log view.
+
+**Phase 3 (Week 3) -- Risk Detector & Enforcement: in progress**
+
+- `policy_engine/` -- the Policy Engine (#8). Currently holds one policy,
+  `POL-001`: confidential/PII data must not reach an external destination.
+- `risk_detector/` -- the path-finding Risk Detector (#9): finds graph paths
+  from sensitive resources to prohibited destinations, both on the current
+  graph (`detect()`) and for a proposed event before it executes
+  (`evaluate_event()`).
+- Not yet built: risk/severity levels (#11) and the Enforcement Engine
+  (#16, #24).
+
+**Known limitation:** `detect()` flags the benign report workflow as a
+violation. The graph records which agents are connected but not which data
+moved along each edge, so the confidential input and the public summary look
+like one flow. `evaluate_event()` is not affected because it checks the
+classification of the object actually being sent.
+
+**Not built yet:** there is no running server. Everything above runs as
+scripts and tests, but nothing listens on a port.
 
 ## Repo layout
 
 ```
-schema/            Event schema (#3) + example event batches
-api/                OpenAPI spec (#45) for the integration API
-graph_engine/       Dynamic Capability Graph (#6) + demo
-requirements.txt    Python dependencies for everything above
-.venv/              Local virtualenv (not committed; recreate with steps below)
+schema/              Event schema (#3) + example event batches
+api/                 OpenAPI spec (#45) for the integration API
+graph_engine/        Dynamic Capability Graph (#6) + demo
+simulator/           Multi-Agent Simulator (#1), built-in scenarios + demo
+event_collector/     Event Collector (#4)
+context_classifier/  Context Classifier (#5)
+audit_history/       Audit history logging (#31) + its tests
+policy_engine/       Policy Engine (#8)
+risk_detector/       Path-finding Risk Detector (#9)
+tests/               Tests for the risk detector and simulator
+requirements.txt     Python dependencies for everything above
+.venv/               Local virtualenv (not committed; recreate with steps below)
 ```
 
 ## How to run the project as it stands
 
 Nothing here is a live service yet -- these steps validate the schema and
-API spec, and run the graph engine against example data.
+API spec, run the demos, and run the test suite.
 
 **1. Set up the environment** (from the repo root):
 
@@ -90,4 +123,21 @@ shows containment breaking the dangerous path while preserving safe work):
 .venv/bin/python -m graph_engine.demo
 ```
 
-See each subdirectory's `README.md` for design details and open questions.
+**5. Run the simulator demo** (runs every built-in scenario through the
+collector and graph, then reruns the exfiltration attack with the Risk
+Detector as the gate, which blocks the external send before it executes):
+
+```bash
+.venv/bin/python -m simulator.demo
+```
+
+**6. Run the tests:**
+
+```bash
+.venv/bin/python -m pytest -q
+```
+
+All commands must be run from the repo root, since some components open
+`schema/event_schema.json` by relative path.
+
+See each subdirectory's README for design details and open questions.
