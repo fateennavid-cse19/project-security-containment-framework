@@ -213,17 +213,10 @@ The current tests cover:
 
 ## Current Limitations
 
--   The current implementation focuses on label-based source and
-    destination policies.
--   Proposed-event evaluation currently targets the event/path model
-    required by the initial sensitive-data exfiltration scenario.
--   Path reporting uses node paths with associated active edge lookup;
-    parallel-edge handling will need to become more explicit before
-    minimum-disruption optimization relies on individual edge
-    identities.
--   Edge costs currently use the prototype cost values supplied by the
-    graph.
--   The detector reports prohibited paths but does not select or apply
-    containment actions.
--   Risk/severity scoring is separate from the current initial detector
-    implementation.
+- The current implementation focuses on label-based source and destination policies.
+- Proposed-event evaluation is currently limited to the initial sensitive-data exfiltration scenario. It checks whether a source resource can already reach the acting agent through active capability paths, and whether the proposed destination would complete a policy-prohibited path. It does not simulate arbitrary capability grants, permission changes, or other graph modifications.
+- Proposed-event evaluation does not currently restrict checks to specific transfer actions or account for the event's execution result.
+- Path reporting uses node paths with associated active edge lookup; parallel-edge handling will need to become more explicit before minimum-disruption optimisation relies on individual edge identities.
+- Edge costs currently use the prototype cost values supplied by the graph.
+- The detector reports prohibited paths but does not select or apply containment actions.
+- Risk/severity scoring is separate from the current initial detector implementation.

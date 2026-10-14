@@ -41,13 +41,24 @@ _DESTINATION_ACTIONS = {"delegate", "send"}
 
 class CapabilityGraph:
     def __init__(self) -> None:
+
+        """Initialise a directed multigraph representing agent capabilities."""
+
         self._g = nx.MultiDiGraph()
 
     # -- node/edge primitives -------------------------------------------------
 
     def ensure_node(self, node_id: str, node_type: NodeType, labels: set[str] | None = None) -> Node:
+
+        """Retrieve an existing node or create one with the specified type and labels.
+
+        Existing nodes retain their identity and gain any newly supplied labels.
+        """
+
         if node_id in self._g.nodes:
             existing = self._g.nodes[node_id]["data"]
+            
+            # Merge new classifications without discarding existing node labels.
             if labels:
                 existing.labels |= labels
             return existing
@@ -65,6 +76,13 @@ class CapabilityGraph:
         cost: float = 1.0,
         blocked: bool = False,
     ):
+
+        """Add an action-specific directed capability edge to the graph.
+
+        Edges store permission information, carried data, disruption cost,
+        and containment status.
+        """
+
         from graph_engine.models import Edge
 
         edge = Edge(
@@ -82,21 +100,28 @@ class CapabilityGraph:
         return edge
 
     def block_edge(self, source: str, target: str, action: EdgeAction) -> bool:
+
         """Minimum-disruption containment primitive: mark one edge blocked
         without deleting it, so the dashboard can still show what was cut."""
+
         if not self._g.has_edge(source, target, key=action.value):
             return False
         self._g.edges[source, target, action.value]["data"].blocked = True
         return True
 
     def revoke_permission(self, permission_id: str) -> int:
+
         """Blocks every edge that was authorised solely by this permission.
         Returns the number of edges blocked."""
+        
         node = self._g.nodes.get(permission_id)
         if node is not None:
+            # Update the permission node's status while preserving its audit visibility.
             node["data"].labels.discard("active")
             node["data"].labels.add("revoked")
         count = 0
+
+        # Disable active edges associated with the revoked permission.
         for _, _, data in self._g.edges(data="data"):
             if data.permission_id == permission_id and not data.blocked:
                 data.blocked = True
@@ -106,10 +131,18 @@ class CapabilityGraph:
     # -- event ingestion --------------------------------------------------
 
     def apply_event(self, event: dict) -> None:
+
+        """Update graph nodes and edges according to a validated agent event.
+
+        The direction of each edge represents the direction of data flow.
+        Denied actions are recorded as blocked edges.
+        """
+
         agent_id = event["agent_id"]
         action = event["action"]
         self.ensure_node(agent_id, NodeType.AGENT)
 
+        # Permission lifecycle events update permission state rather than creating ordinary data-flow edges.
         if action == "grant_permission":
             perm_id = event["object"]["id"]
             self.ensure_node(perm_id, NodeType.PERMISSION, labels={"active"})
@@ -119,23 +152,29 @@ class CapabilityGraph:
             return
 
         obj = event["object"]
+
+        # Preserve object sensitivity classifications as graph node labels.
         obj_labels = {obj["classification"]} if obj.get("classification") else set()
         self.ensure_node(obj["id"], _OBJECT_TYPE_TO_NODE_TYPE[obj["type"]], labels=obj_labels)
 
+        # Denied actions remain visible in the graph but are excluded from active paths.
         blocked_on_arrival = event["result"] == "denied"
 
+        # Orient edges according to data flow rather than the agent initiating the action: reads are inbound, while writes and transfers are outbound.
         if action in _INBOUND_ACTIONS:
             source, target = obj["id"], agent_id
         elif action in _OUTBOUND_ACTIONS:
             source, target = agent_id, obj["id"]
         elif action in _DESTINATION_ACTIONS:
             dest = event["destination"]
+            # Label external destinations for subsequent policy and risk evaluation.
             dest_labels = {"external"} if dest["is_external"] else set()
             self.ensure_node(dest["id"], _DESTINATION_TYPE_TO_NODE_TYPE[dest["type"]], labels=dest_labels)
             source, target = agent_id, dest["id"]
         else:
             raise ValueError(f"Unknown action: {action}")
 
+        # Record the capability relationship and its associated permission, transferred object information, and initial containment state.
         self.add_edge(
             source,
             target,
@@ -162,6 +201,9 @@ class CapabilityGraph:
         return {"nodes": nodes, "edges": edges}
 
     def get_nodes_by_label(self, labels):
+
+        """Return IDs of nodes matching at least one of the specified labels."""
+
         matching_nodes = []
 
         for node_id in self._g.nodes:
@@ -173,46 +215,71 @@ class CapabilityGraph:
         return matching_nodes
 
     def find_path(self, source: str, target: str):
+
+        """Find the shortest active path between two nodes.
+
+        Returns a list of node IDs, or None if no valid path exists.
+        """
+
+        # Both endpoints must exist before attempting path detection.
         if source not in self._g or target not in self._g:
             return None
 
+        # Exclude blocked connections from the path search.
         active = self._active_graph()
 
         try:
+            # Find the shortest path by number of edges, not disruption cost.
             return nx.shortest_path(active, source, target)
         except nx.NetworkXNoPath:
             return None
 
     def get_edge(self, source: str, target: str):
+
+        """Return the first active edge between two nodes, or None if unavailable."""
+
         if not self._g.has_edge(source, target):
             return None
 
+        # Multiple action-specific edges may exist between the same two nodes.
         for _, edge_data in self._g[source][target].items():
             edge = edge_data["data"]
 
+            # Ignore contained connections and return only an active capability.
             if not edge.blocked:
                 return edge
 
         return None
 
     def get_path_edges(self, path):
+
+        """Retrieve active edge objects connecting consecutive nodes in a path."""
+
         edges = []
 
+        # Convert each consecutive pair of nodes into its corresponding edge.
         for i in range(len(path) - 1):
             edge = self.get_edge(path[i], path[i + 1])
 
+            # Only include connections that remain active.
             if edge is not None:
                 edges.append(edge)
 
         return edges
 
     def _active_graph(self):
+
+        """Construct a graph containing all nodes and only non-blocked edges."""
+
+        # Create a separate graph for reachability checks without modifying the original graph or removing its blocked-edge records.
         active = nx.MultiDiGraph(
             (u, v, k, d)
             for u, v, k, d in self._g.edges(keys=True, data=True)
+            # Exclude blocked edges from the active graph.
             if not d["data"].blocked
         )
 
+        # Preserve isolated nodes, including those with no remaining active edges.
         active.add_nodes_from(self._g.nodes)
 
         return active
