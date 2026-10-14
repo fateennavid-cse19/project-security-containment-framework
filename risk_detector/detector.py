@@ -1,5 +1,5 @@
 from risk_detector.models import Violation
-
+from risk_detector.severity import assess_severity
 
 class RiskDetector:
 
@@ -78,6 +78,30 @@ class RiskDetector:
             policy_violations = self._find_violations(policy)
             # Combine violations detected under different security policies.
             violations.extend(policy_violations)
+        nodes = {
+            node["id"]: node
+            for node in self.graph.snapshot()["nodes"]
+        }
+
+        for violation in violations:
+            source_labels = nodes[violation["source"]]["labels"]
+            destination_labels = nodes[
+                violation["destination"]
+            ]["labels"]
+
+            agent_ids = [
+                node_id
+                for node_id in violation["path"]
+                if nodes[node_id]["type"] == "agent"
+            ]
+
+            violation.update(
+                assess_severity(
+                    source_labels,
+                    destination_labels,
+                    agent_ids,
+                )
+            )
 
         return violations
 
@@ -169,7 +193,28 @@ class RiskDetector:
                     ],
                 )
 
-                violations.append(violation.to_dict())
+                record = violation.to_dict()
+
+                nodes = {
+                    node["id"]: node
+                    for node in self.graph.snapshot()["nodes"]
+                }
+
+                agent_ids = [
+                    node_id
+                    for node_id in path
+                    if nodes[node_id]["type"] == "agent"
+                ]
+
+                record.update(
+                    assess_severity(
+                        source_labels,
+                        destination_labels,
+                        agent_ids,
+                    )
+                )
+
+                violations.append(record)
         return violations
 
     def _get_destination_labels(self, destination):
