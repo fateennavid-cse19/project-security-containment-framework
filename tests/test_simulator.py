@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import pytest
 from jsonschema import Draft202012Validator
@@ -17,7 +18,7 @@ from simulator.scenarios import (
 from simulator.simulator import MultiAgentSimulator
 
 
-SCHEMA_FILE = "schema/event_schema.json"
+SCHEMA_FILE = Path(__file__).resolve().parent.parent / "schema" / "event_schema.json"
 
 
 def results(events):

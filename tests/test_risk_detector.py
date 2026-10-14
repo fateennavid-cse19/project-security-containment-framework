@@ -1,4 +1,7 @@
 import json
+from pathlib import Path
+
+import pytest
 
 from graph_engine.graph import CapabilityGraph
 from graph_engine.models import EdgeAction
@@ -7,7 +10,7 @@ from policy_engine.engine import PolicyEngine
 from risk_detector.detector import RiskDetector
 
 
-EVENTS_FILE = "schema/examples/cross_agent_exfiltration.json"
+EVENTS_FILE = Path(__file__).resolve().parent.parent / "schema" / "examples" / "cross_agent_exfiltration.json"
 
 
 def setup_detector(classification="confidential"):
@@ -176,3 +179,43 @@ def test_external_send_without_sensitive_path_not_detected():
     violations = detector.evaluate_event(proposed_event)
 
     assert violations == []
+
+def run_scenario(scenario, gate=False):
+    from simulator.simulator import MultiAgentSimulator
+
+    graph = CapabilityGraph()
+    collector = EventCollector(graph)
+    detector = RiskDetector(graph, PolicyEngine())
+    simulator = MultiAgentSimulator(
+        sinks=[collector.collect],
+        gate=(lambda event: not detector.evaluate_event(event)) if gate else None,
+    )
+    return simulator.run(scenario), graph, detector
+
+
+def test_event_without_destination_is_never_a_violation():
+    events, graph, detector = setup_detector()
+
+    assert detector.evaluate_event(events[0]) == []
+
+
+def test_gate_lets_benign_workflow_through():
+    from simulator.scenarios import BENIGN_REPORT_GENERATION
+
+    events, graph, detector = run_scenario(BENIGN_REPORT_GENERATION, gate=True)
+
+    assert all(event["result"] == "success" for event in events)
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="Known false positive: the graph records which agents are connected, "
+    "not which data moved along each edge, so the confidential input and the "
+    "public summary look like one flow.",
+)
+def test_graph_scan_does_not_flag_benign_workflow():
+    from simulator.scenarios import BENIGN_REPORT_GENERATION
+
+    events, graph, detector = run_scenario(BENIGN_REPORT_GENERATION)
+
+    assert detector.detect() == []

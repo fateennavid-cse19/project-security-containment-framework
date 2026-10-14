@@ -1,0 +1,8 @@
+[run]
+source = .
+omit =
+    .venv/*
+    tests/*
+    */test_*.py
+    */demo.py
+    simulator/evaluate.py
