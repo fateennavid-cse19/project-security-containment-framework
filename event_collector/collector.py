@@ -1,8 +1,11 @@
 import json
+from pathlib import Path
 
 from jsonschema import validate
 from jsonschema.exceptions import ValidationError
 from context_classifier.classifier import ContextClassifier
+
+EVENT_SCHEMA_FILE = Path(__file__).resolve().parent.parent / "schema" / "event_schema.json"
 
 class EventCollector:
     def __init__(self, graph):
@@ -10,7 +13,7 @@ class EventCollector:
         self.events = []
         self.classifier = ContextClassifier()
 
-        with open("schema/event_schema.json") as file:
+        with open(EVENT_SCHEMA_FILE) as file:
             self.schema = json.load(file)
 
     def validate_event(self, event):
