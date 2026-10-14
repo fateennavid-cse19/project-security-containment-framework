@@ -1,0 +1,845 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Containment Console</title>
+
+<style>
+:root {
+    font-family: "Segoe UI", Arial, sans-serif;
+    color: #dce8f7;
+    background: #0b1220;
+}
+* { box-sizing: border-box; }
+body { margin: 0; }
+header {
+    padding: 24px 32px;
+    background: #111c30;
+    border-bottom: 1px solid #263954;
+}
+h1 { margin: 0 0 6px; font-size: 26px; }
+h2 { margin-top: 0; }
+p { color: #aebfd5; line-height: 1.5; }
+main { max-width: 1400px; margin: auto; padding: 24px; }
+
+button, select, input {
+    font: inherit;
+    border: 1px solid #405674;
+    border-radius: 7px;
+    padding: 9px;
+    background: #17263d;
+    color: #eef5ff;
+}
+button { cursor: pointer; }
+button:hover { background: #284768; }
+button:disabled { opacity: .5; cursor: default; }
+.primary { background: #146d93; }
+
+.controls, nav, .toolbar {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    align-items: center;
+}
+nav { margin: 22px 0; }
+nav button.active { background: #246286; }
+
+.cards {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 14px;
+}
+.card, .panel {
+    background: #121e32;
+    border: 1px solid #293e5b;
+    border-radius: 12px;
+    padding: 18px;
+    margin-bottom: 16px;
+}
+.metric { font-size: 30px; font-weight: 700; }
+.muted { color: #aebfd5; font-size: 14px; }
+.hidden { display: none; }
+
+.badge {
+    padding: 3px 8px;
+    border-radius: 5px;
+    display: inline-block;
+}
+.critical { background: #752836; }
+.high { background: #765019; }
+.suspicious { background: #47436f; }
+
+table { width: 100%; border-collapse: collapse; }
+th, td {
+    text-align: left;
+    padding: 11px;
+    border-bottom: 1px solid #30435d;
+}
+th { color: #9fb5d1; }
+
+pre {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    font-size: 13px;
+    background: #0a1323;
+    padding: 14px;
+    border-radius: 8px;
+}
+svg {
+    width: 100%;
+    height: 480px;
+    background: #0c1729;
+    border-radius: 8px;
+    touch-action: none;
+}
+.node { cursor: pointer; }
+.node text {
+    fill: #e5edfa;
+    font-size: 12px;
+    pointer-events: none;
+}
+.edge { stroke: #7899c3; stroke-width: 2; }
+.edge.blocked {
+    stroke: #ff6b79;
+    stroke-dasharray: 7 5;
+}
+.edge.highlight { stroke: #ffca69; stroke-width: 4; }
+.edge-label { fill: #aabed8; font-size: 11px; }
+
+label { font-size: 14px; }
+#status { min-height: 24px; }
+section { overflow-x: auto; }
+
+@media (max-width: 750px) {
+    .cards { grid-template-columns: repeat(2, 1fr); }
+    header, main { padding: 16px; }
+}
+</style>
+</head>
+
+<body>
+<header>
+    <h1>Containment Console</h1>
+    <div class="muted">
+        Operator security dashboard · simulator replay
+    </div>
+</header>
+
+<main>
+<div class="controls">
+    <label>
+        Scenario
+        <select id="scenario"></select>
+    </label>
+
+    <label>
+        Strategy
+        <select id="mode">
+            <option value="adaptive">Adaptive containment</option>
+            <option value="static">Static minimum cut</option>
+            <option value="shutdown">Full shutdown</option>
+        </select>
+    </label>
+
+    <button class="primary" id="run">Run scenario</button>
+    <button id="play" disabled>Play replay</button>
+    <button id="download" disabled>Download evidence</button>
+</div>
+
+<p id="status" role="status">Choose a scenario to begin.</p>
+
+<div class="controls">
+    <label>
+        Replay step
+        <input
+            id="step"
+            type="range"
+            min="0"
+            max="0"
+            value="0"
+            disabled
+        >
+    </label>
+    <span id="stepText">0 / 0</span>
+</div>
+
+<nav>
+    <button class="active" data-page="overview">Overview</button>
+    <button data-page="graph">Capability graph</button>
+    <button data-page="incidents">Incident detail</button>
+</nav>
+
+<section id="overview">
+    <div class="cards">
+        <div class="card">
+            <div class="muted">Events seen</div>
+            <div id="eventCount" class="metric">0</div>
+        </div>
+        <div class="card">
+            <div class="muted">Successful actions</div>
+            <div id="successCount" class="metric">0</div>
+        </div>
+        <div class="card">
+            <div class="muted">Incidents</div>
+            <div id="incidentCount" class="metric">0</div>
+        </div>
+        <div class="card">
+            <div class="muted">Sensitive external sends</div>
+            <div id="leakCount" class="metric">0</div>
+        </div>
+    </div>
+
+    <div class="panel">
+        <h2>Activity</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Time</th>
+                    <th>Agent</th>
+                    <th>Action</th>
+                    <th>Object</th>
+                    <th>Result</th>
+                </tr>
+            </thead>
+            <tbody id="activity"></tbody>
+        </table>
+    </div>
+</section>
+
+<section id="graph" class="hidden">
+    <div class="panel">
+        <h2>Capability graph</h2>
+
+        <div class="toolbar">
+            <label>
+                <input type="checkbox" id="showBlocked" checked>
+                Show blocked edges
+            </label>
+            <button id="zoomIn">Zoom +</button>
+            <button id="zoomOut">Zoom −</button>
+            <button id="reset">Reset view</button>
+            <span class="muted">
+                Drag to pan · click a node to inspect
+            </span>
+        </div>
+
+        <p class="muted">
+            Blue: active · dashed red: blocked ·
+            gold: selected incident path
+        </p>
+
+        <svg
+            id="canvas"
+            viewBox="0 0 1000 480"
+            aria-label="Capability graph"
+        ></svg>
+
+        <pre id="nodeInfo">Select a node.</pre>
+    </div>
+</section>
+
+<section id="incidents" class="hidden">
+    <div class="panel">
+        <h2>Auditable incident detail</h2>
+
+        <select id="incidentSelect">
+            <option>No incidents</option>
+        </select>
+
+        <div id="incidentDetail">
+            <p>No incident at this replay step.</p>
+        </div>
+    </div>
+</section>
+
+<p class="muted">
+    This is a replay of built-in scenarios, not live production
+    monitoring. Equal default weights can produce identical static
+    and adaptive cuts. Successful action counts are not a measure
+    of legitimate tasks preserved. The existing graph data-lineage
+    limitation remains.
+</p>
+</main>
+
+<script>
+let run = null;
+
+let frame = {
+    graph: { nodes: [], edges: [] },
+    events: [],
+    incidents: []
+};
+
+let timer = null;
+let scale = 1;
+let offsetX = 0;
+let offsetY = 0;
+let drag = null;
+
+const $ = id => document.getElementById(id);
+
+function text(tag, value) {
+    const element = document.createElement(tag);
+    element.textContent = value;
+    return element;
+}
+
+function page(name) {
+    for (const id of ["overview", "graph", "incidents"]) {
+        $(id).classList.toggle("hidden", id !== name);
+    }
+
+    document.querySelectorAll("nav button").forEach(button => {
+        button.classList.toggle(
+            "active",
+            button.dataset.page === name
+        );
+    });
+}
+
+document.querySelectorAll("nav button").forEach(button => {
+    button.onclick = () => page(button.dataset.page);
+});
+
+async function request(url, options) {
+    const response = await fetch(url, options);
+    const data = await response.json();
+
+    if (!response.ok) {
+        throw Error(data.error || "Request failed");
+    }
+
+    return data;
+}
+
+request("/api/scenarios")
+    .then(items => {
+        items.forEach(scenario => {
+            const option = text(
+                "option",
+                scenario.id + " (" + scenario.label + ")"
+            );
+
+            option.value = scenario.id;
+            $("scenario").append(option);
+        });
+    })
+    .catch(error => {
+        $("status").textContent = error.message;
+        $("run").disabled = true;
+    });
+
+function stop() {
+    clearInterval(timer);
+    timer = null;
+    $("play").textContent = "Play replay";
+}
+
+$("run").onclick = async () => {
+    stop();
+    $("run").disabled = true;
+    $("status").textContent = "Running scenario…";
+
+    try {
+        run = await request("/api/run", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                scenario: $("scenario").value,
+                mode: $("mode").value
+            })
+        });
+
+        $("step").max = run.frames.length;
+        $("step").value = run.frames.length;
+        $("step").disabled = false;
+        $("play").disabled = false;
+        $("download").disabled = false;
+
+        scale = 1;
+        offsetX = 0;
+        offsetY = 0;
+
+        render();
+
+        $("status").textContent =
+            "Run complete. Move the slider or play the replay.";
+    } catch (error) {
+        $("status").textContent = error.message;
+    } finally {
+        $("run").disabled = false;
+    }
+};
+
+$("step").oninput = () => {
+    stop();
+    render();
+};
+
+$("play").onclick = () => {
+    if (timer) {
+        stop();
+        return;
+    }
+
+    if (Number($("step").value) >= run.frames.length) {
+        $("step").value = 0;
+    }
+
+    render();
+    $("play").textContent = "Pause";
+
+    timer = setInterval(() => {
+        $("step").value = Number($("step").value) + 1;
+        render();
+
+        if (Number($("step").value) >= run.frames.length) {
+            stop();
+        }
+    }, 800);
+};
+
+$("download").onclick = () => {
+    const blob = new Blob(
+        [JSON.stringify(run, null, 2)],
+        { type: "application/json" }
+    );
+
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+
+    link.href = url;
+    link.download = "containment-" + run.run_id + ".json";
+    link.click();
+
+    URL.revokeObjectURL(url);
+};
+
+function render() {
+    const number = Number($("step").value);
+
+    frame = number
+        ? run.frames[number - 1]
+        : {
+            graph: { nodes: [], edges: [] },
+            events: [],
+            incidents: []
+        };
+
+    $("stepText").textContent =
+        number + " / " + run.frames.length;
+
+    $("eventCount").textContent = frame.events.length;
+
+    $("successCount").textContent = frame.events.filter(
+        event => event.result === "success"
+    ).length;
+
+    $("incidentCount").textContent = frame.incidents.length;
+
+    $("leakCount").textContent = frame.events.filter(event =>
+        event.action === "send" &&
+        event.result === "success" &&
+        event.destination?.is_external &&
+        ["confidential", "pii"].includes(
+            event.object.classification
+        )
+    ).length;
+
+    $("activity").replaceChildren();
+
+    for (const event of frame.events) {
+        const row = document.createElement("tr");
+
+        for (const value of [
+            event.timestamp,
+            event.agent_id,
+            event.action,
+            event.object.id,
+            event.result
+        ]) {
+            row.append(text("td", value));
+        }
+
+        $("activity").append(row);
+    }
+
+    const previousSelection = $("incidentSelect").value;
+
+    $("incidentSelect").replaceChildren();
+
+    for (const incident of frame.incidents) {
+        const option = text(
+            "option",
+            incident.incident_id + " · " + incident.severity
+        );
+
+        option.value = incident.incident_id;
+        $("incidentSelect").append(option);
+    }
+
+    if (!frame.incidents.length) {
+        $("incidentSelect").append(
+            text("option", "No incidents")
+        );
+    } else if (
+        frame.incidents.some(
+            incident =>
+                incident.incident_id === previousSelection
+        )
+    ) {
+        $("incidentSelect").value = previousSelection;
+    }
+
+    renderIncident();
+    draw();
+}
+
+function selectedIncident() {
+    return frame.incidents.find(
+        incident =>
+            incident.incident_id === $("incidentSelect").value
+    );
+}
+
+function renderIncident() {
+    const incident = selectedIncident();
+    const panel = $("incidentDetail");
+
+    panel.replaceChildren();
+
+    if (!incident) {
+        panel.append(
+            text("p", "No incident at this replay step.")
+        );
+        return;
+    }
+
+    const badge = text(
+        "p",
+        incident.severity.toUpperCase()
+    );
+
+    badge.className = "badge " + incident.severity;
+    panel.append(badge);
+
+    panel.append(text(
+        "p",
+        "Time: " + incident.timestamp +
+        " · Strategy: " + incident.decision.mode
+    ));
+
+    for (const violation of incident.violations) {
+        panel.append(
+            text("h3", "Policy " + violation.policy_id)
+        );
+
+        panel.append(text(
+            "p",
+            violation.severity_reason || "Policy violation"
+        ));
+
+        panel.append(text(
+            "p",
+            "Dangerous path: " + violation.path.join(" → ")
+        ));
+    }
+
+    panel.append(text(
+        "p",
+        "Decision: " + incident.decision.reason
+    ));
+
+    panel.append(text(
+        "p",
+        "Cut feasible: " + incident.decision.feasible +
+        " · Planned edge cost: " + incident.decision.cost +
+        " · Triggering action denied: " +
+        incident.decision.trigger_denied
+    ));
+
+    panel.append(text("h3", "Selected edges"));
+
+    panel.append(text(
+        "pre",
+        JSON.stringify(incident.decision.edges, null, 2)
+    ));
+
+    panel.append(text("h3", "Complete evidence"));
+
+    panel.append(text(
+        "pre",
+        JSON.stringify(incident, null, 2)
+    ));
+}
+
+$("incidentSelect").onchange = () => {
+    renderIncident();
+    draw();
+};
+
+const namespace = "http://www.w3.org/2000/svg";
+
+function svg(tag, attributes = {}) {
+    const element = document.createElementNS(namespace, tag);
+
+    for (const [key, value] of Object.entries(attributes)) {
+        element.setAttribute(key, value);
+    }
+
+    return element;
+}
+
+function draw() {
+    const canvas = $("canvas");
+    canvas.replaceChildren();
+
+    const definitions = svg("defs");
+
+    const marker = svg("marker", {
+        id: "arrow",
+        viewBox: "0 0 10 10",
+        refX: 9,
+        refY: 5,
+        markerWidth: 6,
+        markerHeight: 6,
+        orient: "auto-start-reverse"
+    });
+
+    marker.append(svg("path", {
+        d: "M 0 0 L 10 5 L 0 10 z",
+        fill: "#99b3d4"
+    }));
+
+    definitions.append(marker);
+    canvas.append(definitions);
+
+    const group = svg("g", {
+        transform:
+            `translate(${offsetX} ${offsetY}) scale(${scale})`
+    });
+
+    canvas.append(group);
+
+    const positions = {};
+    const nodes = frame.graph.nodes;
+
+    nodes.forEach((node, index) => {
+        const angle =
+            index * 2 * Math.PI / Math.max(nodes.length, 1);
+
+        positions[node.id] = {
+            x: 500 + 340 * Math.cos(angle),
+            y: 240 + 175 * Math.sin(angle)
+        };
+    });
+
+    const incident = selectedIncident();
+
+    const paths = incident
+        ? incident.violations.map(violation => violation.path)
+        : [];
+
+    const highlights = new Set();
+
+    paths.forEach(path => {
+        path.slice(1).forEach((node, index) => {
+            highlights.add(
+                JSON.stringify([path[index], node])
+            );
+        });
+    });
+
+    for (const edge of frame.graph.edges) {
+        if (edge.blocked && !$("showBlocked").checked) {
+            continue;
+        }
+
+        const source = positions[edge.source];
+        const target = positions[edge.target];
+
+        if (!source || !target) {
+            continue;
+        }
+
+        const highlighted = highlights.has(
+            JSON.stringify([edge.source, edge.target])
+        );
+
+        const className =
+            "edge" +
+            (edge.blocked ? " blocked" : "") +
+            (highlighted ? " highlight" : "");
+
+        if (edge.source === edge.target) {
+            group.append(svg("path", {
+                d:
+                    `M ${source.x} ${source.y - 16} ` +
+                    `C ${source.x + 65} ${source.y - 75} ` +
+                    `${source.x - 65} ${source.y - 75} ` +
+                    `${source.x - 5} ${source.y - 18}`,
+                class: className,
+                fill: "none",
+                "marker-end": "url(#arrow)"
+            }));
+
+            continue;
+        }
+
+        const dx = target.x - source.x;
+        const dy = target.y - source.y;
+        const distance = Math.hypot(dx, dy) || 1;
+
+        const parallel = frame.graph.edges.filter(other =>
+            other.source === edge.source &&
+            other.target === edge.target
+        );
+
+        const index = parallel.indexOf(edge);
+
+        const bend =
+            (index - (parallel.length - 1) / 2) * 38;
+
+        const middleX =
+            (source.x + target.x) / 2 -
+            dy / distance * bend;
+
+        const middleY =
+            (source.y + target.y) / 2 +
+            dx / distance * bend;
+
+        group.append(svg("path", {
+            d:
+                `M ${source.x + dx / distance * 19} ` +
+                `${source.y + dy / distance * 19} ` +
+                `Q ${middleX} ${middleY} ` +
+                `${target.x - dx / distance * 23} ` +
+                `${target.y - dy / distance * 23}`,
+            class: className,
+            fill: "none",
+            "marker-end": "url(#arrow)"
+        }));
+
+        const label = svg("text", {
+            x: middleX,
+            y: middleY - 5,
+            class: "edge-label"
+        });
+
+        label.textContent = edge.action;
+        group.append(label);
+    }
+
+    for (const node of nodes) {
+        const position = positions[node.id];
+
+        const nodeGroup = svg("g", {
+            class: "node",
+            role: "button",
+            tabindex: 0,
+            "aria-label": node.id
+        });
+
+        const color = node.labels.includes("external")
+            ? "#bd556a"
+            : node.type === "agent"
+                ? "#2d89ab"
+                : "#7168b6";
+
+        nodeGroup.append(svg("circle", {
+            cx: position.x,
+            cy: position.y,
+            r: 18,
+            fill: color
+        }));
+
+        const label = svg("text", {
+            x: position.x,
+            y: position.y + 34,
+            "text-anchor": "middle"
+        });
+
+        label.textContent = node.id;
+        nodeGroup.append(label);
+
+        const inspect = () => {
+            $("nodeInfo").textContent =
+                JSON.stringify(node, null, 2);
+        };
+
+        nodeGroup.onclick = inspect;
+
+        nodeGroup.onkeydown = event => {
+            if (event.key === "Enter") {
+                inspect();
+            }
+        };
+
+        group.append(nodeGroup);
+    }
+}
+
+$("showBlocked").onchange = draw;
+
+$("zoomIn").onclick = () => {
+    scale = Math.min(3, scale * 1.2);
+    draw();
+};
+
+$("zoomOut").onclick = () => {
+    scale = Math.max(.3, scale / 1.2);
+    draw();
+};
+
+$("reset").onclick = () => {
+    scale = 1;
+    offsetX = 0;
+    offsetY = 0;
+    draw();
+};
+
+$("canvas").onpointerdown = event => {
+    if (event.target.closest(".node")) {
+        return;
+    }
+
+    drag = {
+        x: event.clientX,
+        y: event.clientY
+    };
+
+    $("canvas").setPointerCapture(event.pointerId);
+};
+
+$("canvas").onpointermove = event => {
+    if (!drag) {
+        return;
+    }
+
+    const box = $("canvas").getBoundingClientRect();
+
+    offsetX +=
+        (event.clientX - drag.x) * 1000 / box.width;
+
+    offsetY +=
+        (event.clientY - drag.y) * 480 / box.height;
+
+    drag = {
+        x: event.clientX,
+        y: event.clientY
+    };
+
+    draw();
+};
+
+$("canvas").onpointerup = () => {
+    drag = null;
+};
+
+$("canvas").onpointercancel = () => {
+    drag = null;
+};
+</script>
+</body>
+</html>
