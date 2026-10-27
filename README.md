@@ -49,8 +49,10 @@ Following the 7-phase plan in `Internal-Security_Framework_7Week_Gantt_Chart.xls
   from sensitive resources to prohibited destinations, both on the current
   graph (`detect()`) and for a proposed event before it executes
   (`evaluate_event()`).
-- Not yet built: risk/severity levels (#11) and the Enforcement Engine
-  (#16, #24).
+- Risk/severity levels (#11) were added in Task 3.2 (see below).
+  Containment decisions are applied through the simulator gate by
+  `disruption_optimizer.baselines.ContainmentGate` (Phase 4); the Enforcement
+  Engine (#16, #24) is not yet a separate component.
 
 **Known limitation:** `detect()` flags the benign report workflow as a
 violation. The graph records which agents are connected but not which data
@@ -59,7 +61,7 @@ like one flow. `evaluate_event()` is not affected because it checks the
 classification of the object actually being sent. This is now recorded as an
 expected-failure test and measured by the evaluation script (see Testing).
 
-## Recent additions — Task 3.2, Phase 4 and Phase 5
+## Recent additions — Task 3.2, Phase 4, Phase 5 and Phase 6.3
 
 ### Task 3.2 — Risk / Severity Levels (#11)
 
@@ -173,37 +175,63 @@ existing audit-history logger. JSON export is not a tamper-evident audit store.
 The dashboard server supplies `/`, `/api/scenarios`, and `/api/run`.
 It does not yet implement the complete specification in `api/openapi.yaml`.
 
-### Validation of the additions
+### Phase 6.3 — Operational Disruption & Gate Latency
 
-The development copy with severity and Phase 4 tests produced:
+Added `simulator/metrics.py`, which runs every built-in scenario under each
+containment strategy (shutdown, static, adaptive) and reports:
 
-```text
-96 passed, 1 xfailed
+- Legitimate work retained compared with an uncontained reference run.
+- Measured wall-clock gate latency per call (mean and p95), plus the time to
+  detect, plan and apply restrictions for each incident.
+
+```bash
+.venv/bin/python -m simulator.metrics
 ```
 
-Without `tests/test_severity.py`, the expected count is 89 passed and 1 xfailed.
-Run the local test suite to confirm the current checkout.
+Options: `--repeats`, `--warmups`, `--labels` (a JSON file mapping scenario
+IDs to their legitimate step numbers) and `--output` (write results as JSON).
+
+Limitations:
+
+- Attack scenarios report retention as N/A unless legitimate steps are
+  annotated with `--labels`.
+- Gate samples include both allowed and denied calls. Events rejected by base
+  access control never reach the gate.
+- The default adaptive weights are zero, and only three scenarios exist.
+
+### Validation of the additions
+
+`tests/test_severity.py` and `tests/test_disruption_optimizer.py` cover
+Task 3.2 and Phase 4:
+
+- **Severity:** each rating rule, and the severity attached by both
+  `detect()` and `evaluate_event()`.
+- **Cost model:** static and adaptive costs, and rejection of invalid values.
+- **Minimum cut:** the cheapest cut, parallel and blocked edges, protected
+  edges, infeasible cuts, multiple endpoints, and adaptive re-weighting.
+- **Containment gate:** every strategy against every scenario. No attack leaks
+  data, the benign workflow is untouched, blocks persist on replay, shutdown
+  costs more than a static cut, and an infeasible cut still denies the trigger.
 
 Dashboard validation checked replay frames and incident evidence for all nine
 built-in scenario/strategy combinations. JavaScript syntax was checked;
 automated browser interaction and visual testing remain outstanding.
 
-The original 97% coverage figure below describes the earlier codebase and has
-not been remeasured for these additions.
-
 ## Testing
 
-**Status:** 73 passed, 1 expected failure, 97% line coverage of source code
-(demo and evaluation scripts excluded).
+**Status:** 114 passed, 1 expected failure. Line coverage is 72% of all
+source code, or 97% when `dashboard/server.py` and `simulator/metrics.py` are
+excluded; those two files have no tests yet. Demo and evaluation scripts are
+excluded from coverage.
 
 The tests are organised in layers, from single components up to the whole
 pipeline:
 
 | Level | What it checks | Where |
 |---|---|---|
-| Unit | Each component on its own: graph edge direction and labels, block/revoke containment, context classification, collector validation, policy definitions, detector rules | `tests/test_graph_engine.py`, `test_context_classifier.py`, `test_event_collector.py`, `test_policy_engine.py`, `test_risk_detector.py` |
+| Unit | Each component on its own: graph edge direction and labels, block/revoke containment, context classification, collector validation, policy definitions, detector rules, severity rules, disruption cost model and minimum cut | `tests/test_graph_engine.py`, `test_context_classifier.py`, `test_event_collector.py`, `test_policy_engine.py`, `test_risk_detector.py`, `test_severity.py`, `test_disruption_optimizer.py` |
 | Integration | Components working together: simulator -> collector -> graph, collector -> audit log with context | `tests/test_simulator.py`, `audit_history/test_audit_logger.py` |
-| System (end-to-end) | The full pipeline stopping an attack: with the Risk Detector as the gate, the exfiltration send is denied and the attacker is unreachable in the graph | `test_detector_gate_stops_exfiltration_end_to_end` |
+| System (end-to-end) | The full pipeline stopping an attack: with the Risk Detector as the gate, the exfiltration send is denied and the attacker is unreachable in the graph; with `ContainmentGate`, every strategy stops both attacks without leaking | `test_detector_gate_stops_exfiltration_end_to_end`, `test_attacks_do_not_leak` |
 | Edge / negative cases | Malformed scenarios rejected before any event (7 cases), invalid events rejected without side effects, public or internal data not flagged, queries on unknown nodes | across the files above |
 | Contract | Every simulated event is valid against `schema/event_schema.json` | `test_all_scenarios_emit_schema_valid_events` |
 | Reproducibility | Seeded runs produce identical timestamps | `test_jitter_is_reproducible_with_seed` |
@@ -233,12 +261,15 @@ benchmark dataset (#35) is the follow-up.
 - The `detect()` false positive above, kept as a strict `xfail` test so it
   shows up as soon as it is fixed.
 
-**Still to test:** the Enforcement Engine (#16, #24) and severity levels (#11)
-once built, the API against `api/openapi.yaml` once a server exists, and gate
-latency per event (the gate runs inline, so it must stay fast).
+**Still to test:** the dashboard server (`dashboard/server.py`) and the
+Phase 6.3 metrics script (`simulator/metrics.py`); the Enforcement Engine
+(#16, #24) once it is a separate component; and the full API in
+`api/openapi.yaml`. Gate latency is now measured by `simulator.metrics`, but
+no test enforces a latency limit.
 
-**Not built yet:** there is no running server. Everything above runs as
-scripts and tests, but nothing listens on a port.
+**Server:** only the local dashboard server exists (`python -m
+dashboard.server`). It serves `/`, `/api/scenarios` and `/api/run`, not the
+integration API described in `api/openapi.yaml`.
 
 ## Repo layout
 
@@ -246,12 +277,14 @@ scripts and tests, but nothing listens on a port.
 schema/              Event schema (#3) + example event batches
 api/                 OpenAPI spec (#45) for the integration API
 graph_engine/        Dynamic Capability Graph (#6) + demo
-simulator/           Multi-Agent Simulator (#1), built-in scenarios, demo + detection evaluation
+simulator/           Multi-Agent Simulator (#1), built-in scenarios, demo, detection evaluation + Phase 6.3 metrics
 event_collector/     Event Collector (#4)
 context_classifier/  Context Classifier (#5)
 audit_history/       Audit history logging (#31) + its tests
 policy_engine/       Policy Engine (#8)
-risk_detector/       Path-finding Risk Detector (#9)
+risk_detector/       Path-finding Risk Detector (#9) + severity levels (#11)
+disruption_optimizer/ Disruption cost model, minimum-cut optimiser, containment strategies + demo
+dashboard/           Operator security dashboard (local server + single-page UI)
 tests/               Unit, integration and system tests (shared fixtures in conftest.py)
 requirements.txt     Python dependencies for everything above
 pytest.ini           Test discovery and import path
