@@ -1,0 +1,29 @@
+{
+  "cross_agent_data_exfiltration": [
+    1,
+    2
+  ],
+  "permission_escalation": [
+    1
+  ],
+  "direct_confidential_exfiltration": [
+    1
+  ],
+  "long_chain_pii_exfiltration": [
+    1,
+    2
+  ],
+  "mixed_workflow_confidential_exfiltration": [
+    1,
+    2,
+    5,
+    6,
+    7
+  ],
+  "parallel_branch_pii_exfiltration": [
+    1,
+    2,
+    3,
+    6
+  ]
+}

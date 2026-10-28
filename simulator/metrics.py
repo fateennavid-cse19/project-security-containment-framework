@@ -349,7 +349,7 @@ def evaluate(repeats=5, warmups=1, labels=None):
             ),
             (
                 "Default adaptive weights are zero. "
-                "Only three built-in scenarios are evaluated."
+                f"{len(ALL_SCENARIOS)} built-in scenarios are evaluated."
             ),
         ],
     }
@@ -417,7 +417,7 @@ def main():
         parser.error(str(error))
 
     print(
-        f"{'Scenario':34} "
+        f"{'Scenario':42} "
         f"{'Strategy':10} "
         f"{'Retained %':>11} "
         f"{'Gate mean ms':>13} "
@@ -433,7 +433,7 @@ def main():
         p95 = row["gate_latency"]["p95_ms"]
 
         print(
-            f"{row['scenario']:34} "
+            f"{row['scenario']:42} "
             f"{row['strategy']:10} "
             f"{format_value(retention):>11} "
             f"{format_value(mean):>13} "

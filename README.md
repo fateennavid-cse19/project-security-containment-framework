@@ -61,7 +61,7 @@ like one flow. `evaluate_event()` is not affected because it checks the
 classification of the object actually being sent. This is now recorded as an
 expected-failure test and measured by the evaluation script (see Testing).
 
-## Recent additions — Task 3.2, Phase 4, Phase 5 and Phase 6.3
+## Recent additions — Task 3.2, Phase 4, Phase 5, Phase 6.1 and Phase 6.3
 
 ### Task 3.2 — Risk / Severity Levels (#11)
 
@@ -175,6 +175,33 @@ existing audit-history logger. JSON export is not a tamper-evident audit store.
 The dashboard server supplies `/`, `/api/scenarios`, and `/api/run`.
 It does not yet implement the complete specification in `api/openapi.yaml`.
 
+
+### Phase 6.1 — Expanded Scenario Dataset
+
+The built-in benchmark now contains 12 scripted trajectories: 6 benign and
+6 attack scenarios. The scenarios stay within the policy and event vocabulary
+implemented by the current prototype. `simulator/DATASET.md` documents the
+design and `simulator/legitimate_step_labels.json` provides legitimate-step
+annotations for attack trajectories.
+
+The expanded dataset adds public/internal policy-boundary cases, internal
+processing of confidential/PII data, direct and long-chain exfiltration, and
+mixed/parallel workflows designed to measure preserved legitimate work.
+
+Current detection results are:
+
+```text
+graph scan   TP=6 FP=1 TN=5 FN=0  precision=0.86 recall=1.00
+inline gate  TP=6 FP=0 TN=6 FN=0  precision=1.00 recall=1.00
+```
+
+The single graph-scan false positive is the existing
+`benign_report_generation` limitation. With inline containment enabled, all
+six attack scenarios are blocked without sensitive-data leakage.
+
+The controlled dataset is suitable for prototype evaluation but is not a
+large real-world statistical benchmark.
+
 ### Phase 6.3 — Operational Disruption & Gate Latency
 
 Added `simulator/metrics.py`, which runs every built-in scenario under each
@@ -193,11 +220,14 @@ IDs to their legitimate step numbers) and `--output` (write results as JSON).
 
 Limitations:
 
-- Attack scenarios report retention as N/A unless legitimate steps are
-  annotated with `--labels`.
+- Attack scenarios require legitimate-step annotations for retention metrics.
+  The repository now provides `simulator/legitimate_step_labels.json` for the
+  built-in attack scenarios.
 - Gate samples include both allowed and denied calls. Events rejected by base
   access control never reach the gate.
-- The default adaptive weights are zero, and only three scenarios exist.
+- The default adaptive weights are zero.
+- The 12-scenario dataset is a controlled scripted benchmark, not a large
+  real-world statistical dataset.
 
 ### Validation of the additions
 
@@ -213,16 +243,18 @@ Task 3.2 and Phase 4:
   data, the benign workflow is untouched, blocks persist on replay, shutdown
   costs more than a static cut, and an infeasible cut still denies the trigger.
 
-Dashboard validation checked replay frames and incident evidence for all nine
-built-in scenario/strategy combinations. JavaScript syntax was checked;
-automated browser interaction and visual testing remain outstanding.
+Dashboard validation previously checked replay frames and incident evidence
+for the original three scenarios across nine scenario/strategy combinations.
+JavaScript syntax was checked; automated browser interaction and visual testing
+of the expanded 12-scenario dataset remain outstanding.
 
 ## Testing
 
-**Status:** 114 passed, 1 expected failure. Line coverage is 72% of all
-source code, or 97% when `dashboard/server.py` and `simulator/metrics.py` are
-excluded; those two files have no tests yet. Demo and evaluation scripts are
-excluded from coverage.
+**Status:** 120 passed, 1 expected failure. Line coverage is 78% of all
+source code, or about 97% when `dashboard/server.py` and `simulator/metrics.py`
+are excluded. The metrics module now has dataset-level tests, but its CLI and
+timing-report paths are only partially covered; the dashboard server still has
+no automated tests. Demo and evaluation scripts are excluded from coverage.
 
 The tests are organised in layers, from single components up to the whole
 pipeline:
@@ -231,7 +263,7 @@ pipeline:
 |---|---|---|
 | Unit | Each component on its own: graph edge direction and labels, block/revoke containment, context classification, collector validation, policy definitions, detector rules, severity rules, disruption cost model and minimum cut | `tests/test_graph_engine.py`, `test_context_classifier.py`, `test_event_collector.py`, `test_policy_engine.py`, `test_risk_detector.py`, `test_severity.py`, `test_disruption_optimizer.py` |
 | Integration | Components working together: simulator -> collector -> graph, collector -> audit log with context | `tests/test_simulator.py`, `audit_history/test_audit_logger.py` |
-| System (end-to-end) | The full pipeline stopping an attack: with the Risk Detector as the gate, the exfiltration send is denied and the attacker is unreachable in the graph; with `ContainmentGate`, every strategy stops both attacks without leaking | `test_detector_gate_stops_exfiltration_end_to_end`, `test_attacks_do_not_leak` |
+| System (end-to-end) | The full pipeline stopping attacks: the Risk Detector gate denies prohibited sends, and every containment strategy stops all six attack scenarios without sensitive leakage | `test_detector_gate_stops_exfiltration_end_to_end`, `test_every_attack_is_blocked_without_sensitive_leak` |
 | Edge / negative cases | Malformed scenarios rejected before any event (7 cases), invalid events rejected without side effects, public or internal data not flagged, queries on unknown nodes | across the files above |
 | Contract | Every simulated event is valid against `schema/event_schema.json` | `test_all_scenarios_emit_schema_valid_events` |
 | Reproducibility | Seeded runs produce identical timestamps | `test_jitter_is_reproducible_with_seed` |
@@ -241,15 +273,17 @@ both detection modes and scores it against the scenario's ground-truth label
 (`benign` / `attack`):
 
 ```
-graph scan   TP=2 FP=1 TN=0 FN=0  precision=0.67 recall=1.00
-inline gate  TP=2 FP=0 TN=1 FN=0  precision=1.00 recall=1.00
+graph scan   TP=6 FP=1 TN=5 FN=0  precision=0.86 recall=1.00
+inline gate  TP=6 FP=0 TN=6 FN=0  precision=1.00 recall=1.00
 ```
 
-Both modes catch every attack. The graph scan's false positive is the known
-limitation above; the inline gate gets the benign workflow right, and with it
-in place no sensitive data leaks in either attack. With only three scenarios
-these numbers are a sanity check, not a statistical result -- growing the
-benchmark dataset (#35) is the follow-up.
+Both modes catch every attack. The graph scan's single false positive is the
+known `benign_report_generation` limitation; the inline gate correctly allows
+all six benign scenarios, and no sensitive data leaks from any of the six
+attack scenarios when containment is enabled. The 12-scenario dataset is a
+controlled research benchmark and should not be presented as a large
+real-world statistical sample. See `simulator/DATASET.md` for the scenario
+design and legitimate-step annotations used for disruption metrics.
 
 **Issues found by testing:**
 

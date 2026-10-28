@@ -67,7 +67,7 @@ def main():
     modes = {"graph scan": run_graph_scan, "inline gate": run_inline_gate}
     totals = {mode: {"TP": 0, "FP": 0, "TN": 0, "FN": 0} for mode in modes}
 
-    print(f'{"scenario":<32} {"label":<7} {"mode":<12} {"flagged":<8} {"leaked":<7} outcome')
+    print(f'{"scenario":<42} {"label":<7} {"mode":<12} {"flagged":<8} {"leaked":<7} outcome')
     print("-" * 80)
 
     for scenario in ALL_SCENARIOS:
@@ -77,7 +77,7 @@ def main():
             result = outcome(is_attack, flagged)
             totals[mode][result] += 1
             print(
-                f"{scenario.scenario_id:<32} {scenario.trajectory_type:<7} {mode:<12} "
+                f"{scenario.scenario_id:<42} {scenario.trajectory_type:<7} {mode:<12} "
                 f"{str(flagged):<8} {str(data_leaked):<7} {result}"
             )
 
