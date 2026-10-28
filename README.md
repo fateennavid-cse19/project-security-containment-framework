@@ -61,7 +61,7 @@ like one flow. `evaluate_event()` is not affected because it checks the
 classification of the object actually being sent. This is now recorded as an
 expected-failure test and measured by the evaluation script (see Testing).
 
-## Recent additions — Task 3.2, Phase 4, Phase 5, Phase 6.1 and Phase 6.3
+## Recent additions — Task 3.2, Phase 4, Phase 5, Phase 6.1, Phase 6.2 and Phase 6.3
 
 ### Task 3.2 — Risk / Severity Levels (#11)
 
@@ -202,6 +202,43 @@ six attack scenarios are blocked without sensitive-data leakage.
 The controlled dataset is suitable for prototype evaluation but is not a
 large real-world statistical benchmark.
 
+### Phase 6.2 — Benchmarks & Security Effectiveness Metrics
+
+`simulator/evaluate.py` now reports a fuller set of security-effectiveness
+metrics for both detection modes over the complete 12-scenario benchmark.
+Alongside TP, FP, TN, FN, precision and recall, it reports prohibited-path
+coverage, accuracy, false positive rate (FPR), false negative rate (FNR),
+benign allow rate, attack success rate and attack prevention rate.
+
+Current benchmark results are:
+
+```text
+graph scan   TP=6 FP=1 TN=5 FN=0
+             precision=0.86 recall=1.00 accuracy=0.92 path_coverage=1.00 FPR=0.17 FNR=0.00
+             benign_allow=0.83 attack_success=1.00 attack_prevention=0.00
+inline gate  TP=6 FP=0 TN=6 FN=0
+             precision=1.00 recall=1.00 accuracy=1.00 path_coverage=1.00 FPR=0.00 FNR=0.00
+             benign_allow=1.00 attack_success=0.00 attack_prevention=1.00
+```
+
+The graph scan is post-hoc and does not block execution, so its attack-success
+and prevention values describe the uncontained run rather than containment
+performance. The inline gate is preventive: it blocks every attack scenario,
+allows every benign scenario, and prevents sensitive-data leakage in all six
+attack cases.
+
+`tests/test_evaluation_metrics.py` verifies the metric calculations, including
+zero-denominator handling and invalid inputs. The benchmark is deterministic
+for the scripted dataset and can be reproduced with:
+
+```bash
+python -m simulator.evaluate
+```
+
+These results are evidence for the current controlled prototype only; they
+should not be presented as statistical estimates of performance on real-world
+agent traffic.
+
 ### Phase 6.3 — Operational Disruption & Gate Latency
 
 Added `simulator/metrics.py`, which runs every built-in scenario under each
@@ -250,7 +287,7 @@ of the expanded 12-scenario dataset remain outstanding.
 
 ## Testing
 
-**Status:** 120 passed, 1 expected failure. Line coverage is 78% of all
+**Status:** 124 passed, 1 expected failure. Line coverage is 78% of all
 source code, or about 97% when `dashboard/server.py` and `simulator/metrics.py`
 are excluded. The metrics module now has dataset-level tests, but its CLI and
 timing-report paths are only partially covered; the dashboard server still has
@@ -261,7 +298,7 @@ pipeline:
 
 | Level | What it checks | Where |
 |---|---|---|
-| Unit | Each component on its own: graph edge direction and labels, block/revoke containment, context classification, collector validation, policy definitions, detector rules, severity rules, disruption cost model and minimum cut | `tests/test_graph_engine.py`, `test_context_classifier.py`, `test_event_collector.py`, `test_policy_engine.py`, `test_risk_detector.py`, `test_severity.py`, `test_disruption_optimizer.py` |
+| Unit | Each component on its own: graph edge direction and labels, block/revoke containment, context classification, collector validation, policy definitions, detector rules, severity rules, disruption cost model, minimum cut and security-effectiveness metric calculations | `tests/test_graph_engine.py`, `test_context_classifier.py`, `test_event_collector.py`, `test_policy_engine.py`, `test_risk_detector.py`, `test_severity.py`, `test_disruption_optimizer.py`, `test_evaluation_metrics.py` |
 | Integration | Components working together: simulator -> collector -> graph, collector -> audit log with context | `tests/test_simulator.py`, `audit_history/test_audit_logger.py` |
 | System (end-to-end) | The full pipeline stopping attacks: the Risk Detector gate denies prohibited sends, and every containment strategy stops all six attack scenarios without sensitive leakage | `test_detector_gate_stops_exfiltration_end_to_end`, `test_every_attack_is_blocked_without_sensitive_leak` |
 | Edge / negative cases | Malformed scenarios rejected before any event (7 cases), invalid events rejected without side effects, public or internal data not flagged, queries on unknown nodes | across the files above |
@@ -272,9 +309,13 @@ pipeline:
 both detection modes and scores it against the scenario's ground-truth label
 (`benign` / `attack`):
 
-```
-graph scan   TP=6 FP=1 TN=5 FN=0  precision=0.86 recall=1.00
-inline gate  TP=6 FP=0 TN=6 FN=0  precision=1.00 recall=1.00
+```text
+graph scan   TP=6 FP=1 TN=5 FN=0
+             precision=0.86 recall=1.00 accuracy=0.92 path_coverage=1.00 FPR=0.17 FNR=0.00
+             benign_allow=0.83 attack_success=1.00 attack_prevention=0.00
+inline gate  TP=6 FP=0 TN=6 FN=0
+             precision=1.00 recall=1.00 accuracy=1.00 path_coverage=1.00 FPR=0.00 FNR=0.00
+             benign_allow=1.00 attack_success=0.00 attack_prevention=1.00
 ```
 
 Both modes catch every attack. The graph scan's single false positive is the
